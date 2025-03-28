@@ -1,6 +1,6 @@
 # Creative Writing Benchmark v3
 
-🎨 Welcome to the Creative Writing Benchmark v3 repository! This benchmark evaluates the creative writing capabilities of large language models using a hybrid rubric and Elo scoring system, designed for enhanced discrimination, especially at the top end of model performance. This is the system used for the Creative Writing leaderboard on [EQ-Bench.com](https://eq-bench.com/).
+🎨 Welcome to the Creative Writing Benchmark v3 repository! This benchmark evaluates the creative writing capabilities of large language models using a hybrid rubric and Elo scoring system, designed for enhanced discrimination, especially at the top end of model performance. This is the system used for the Creative Writing leaderboard on [EQ-Bench.com](https://eqbench.com/creative_writing.html).
 
 ## How the Benchmark Works
 
