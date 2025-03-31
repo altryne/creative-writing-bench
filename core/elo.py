@@ -239,7 +239,7 @@ def normalize_elo_scores(raw_scores, anchor_models=None):
     if anchor_models is None:
         anchor_models = {
             'deepseek/deepseek-r1': 1500,
-            'mistralai/ministral-3b': 200
+            'meta-llama/llama-3.2-1b-instruct': 200
         }
     
     # First check if we have at least two anchor models in our raw scores
