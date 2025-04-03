@@ -24,6 +24,9 @@ from core.scoring import (
 )
 from core.elo import run_elo_analysis_creative
 
+# (Keep compute_benchmark_results_creative and pick_best_iteration_for_each_prompt_model as they are)
+# ... (previous functions remain unchanged) ...
+
 def compute_benchmark_results_creative(runs, run_key, runs_file, negative_criteria):
     """
     Gathers all creative tasks from the run, finds the completed/judged ones, aggregates results,
@@ -124,6 +127,7 @@ def pick_best_iteration_for_each_prompt_model(run_data, negative_criteria) -> Di
 
     return best_map
 
+
 def run_eq_bench_creative(
     test_model: str,
     judge_model: str,
@@ -136,7 +140,8 @@ def run_eq_bench_creative(
     judge_prompt_file: str = "data/creative_writing_judging_prompt.txt",
     redo_judging: bool = False,
     save_interval: int = 2,
-    iterations: int = 1
+    iterations: int = 1,
+    run_elo: bool = True  # --- New parameter ---
 ) -> str:
     """
     Main function to run the creative writing benchmark. Similar structure to eqbench’s run_eq_bench_therapy.
@@ -167,6 +172,10 @@ def run_eq_bench_creative(
         logging.info(f"Created new run: {run_key}")
     else:
         logging.info(f"Resuming run: {run_key}")
+        # Ensure start time exists if resuming
+        if "start_time" not in runs[run_key]:
+             update_run_data(runs_file, run_key, {"start_time": datetime.now().isoformat()})
+
 
     creative_writing_criteria = []
     if os.path.exists(creative_criteria_file):
@@ -200,13 +209,17 @@ def run_eq_bench_creative(
     if redo_judging:
         run_data = load_json_file(runs_file).get(run_key, {})
         c_tasks = run_data.get("creative_tasks", {})
+        tasks_updated = False
         for i_str, p_dict in c_tasks.items():
             for prompt_id, c_dict in p_dict.items():
-                if c_dict.get("status") == "completed":
+                # Reset status to allow re-judging
+                if c_dict.get("status") in ["completed", "judged"]:
+                    c_dict["status"] = "generated" # Mark as needing judging
                     results_by_mod = c_dict.get("results_by_modifier", {})
                     for seed_mod, block in results_by_mod.items():
                         block.pop("judge_scores", None)
                         block.pop("raw_judge_text", None)
+                    # Update specific task data
                     update_run_data(runs_file, run_key, {
                         "creative_tasks": {
                             i_str: {
@@ -214,7 +227,11 @@ def run_eq_bench_creative(
                             }
                         }
                     })
-                    logging.info(f"Reset judge data for iteration={i_str}, prompt_id={prompt_id}")
+                    tasks_updated = True
+                    logging.info(f"Reset judge data and status for iteration={i_str}, prompt_id={prompt_id}")
+        if tasks_updated:
+             logging.info("Completed resetting judge data due to --redo-judging flag.")
+
 
     # figure out tasks
     run_data = load_json_file(runs_file).get(run_key, {})
@@ -243,112 +260,175 @@ def run_eq_bench_creative(
                 new_task = CreativeWritingTask(
                     prompt_id=prompt_key,
                     base_prompt=base_prompt,
-                    seed_modifiers=[iteration_seed],
+                    seed_modifiers=[iteration_seed], # Only the one for this iteration
                     iteration_index=i,
                     test_model=test_model,
                     judge_model=judge_model
                 )
                 tasks_to_run.append(new_task)
 
-    logging.info(f"Total tasks to run: {len(tasks_to_run)} (across {iterations} iteration(s))")
+    logging.info(f"Total tasks to process: {len(tasks_to_run)} (across {iterations} iteration(s))")
 
-    # 1) Generate
-    filtered_tasks = []
+    # 1) Generate (if needed)
+    tasks_needing_generation = []
     for task_obj in tasks_to_run:
-        # Check if task is already completed
         i_str = str(task_obj.iteration_index)
         prompt_id = task_obj.prompt_id
-        
-        # Get the current status from existing data
         iteration_dict = existing_tasks.get(i_str, {})
         c_data = iteration_dict.get(str(prompt_id), {})
         status = c_data.get("status", None)
-        
-        # Only include tasks that need generation
-        if status not in ["completed", "judged"]:
-            filtered_tasks.append(task_obj)
-        else:
-            # Optionally log skipped tasks
-            logging.info(f"Skipping already completed task: iteration={i_str}, prompt={prompt_id}")
 
-    logging.info(f"Filtered down to {len(filtered_tasks)} tasks that need generation (from {len(tasks_to_run)} total)")
+        # Only generate if status is None (new) or explicitly needs generation
+        if status is None or status == "pending_generation":
+             tasks_needing_generation.append(task_obj)
+        # If redo_judging is set, we don't need to regenerate, just rejudge later.
+        # If status is 'generated', 'completed', or 'judged', generation is done.
 
-    # Then use filtered_tasks instead of tasks_to_run in the ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures_map = {}
-        for task_obj in filtered_tasks:  # <-- Use filtered list here
-            fut = executor.submit(
-                task_obj.generate_creative_piece,
-                api_clients,
-                runs_file,
-                run_key,
-                save_interval
-            )
-            futures_map[fut] = task_obj
-        for fut in tqdm(futures_map, total=len(futures_map), desc="Generating creative pieces"):
-            _ = fut.result()
+    if tasks_needing_generation:
+        logging.info(f"Found {len(tasks_needing_generation)} tasks requiring generation.")
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures_map = {}
+            for task_obj in tasks_needing_generation:
+                fut = executor.submit(
+                    task_obj.generate_creative_piece,
+                    api_clients,
+                    runs_file,
+                    run_key,
+                    save_interval
+                )
+                futures_map[fut] = task_obj
+            # Use list(futures_map.keys()) for tqdm if futures_map can change size during iteration
+            for fut in tqdm(list(futures_map.keys()), total=len(futures_map), desc="Generating creative pieces"):
+                try:
+                    _ = fut.result() # Wait for completion, handle exceptions if needed
+                except Exception as e:
+                    task = futures_map[fut]
+                    logging.error(f"Error generating for task {task.prompt_id} (iter {task.iteration_index}): {e}", exc_info=True)
+    else:
+        logging.info("No tasks require generation.")
 
-    # 2) Judge
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures_map = {}
-        for task_obj in tasks_to_run:
-            fut = executor.submit(
-                task_obj.judge,
-                api_clients,
-                judge_prompt_template,
-                creative_writing_criteria,
-                negative_criteria,
-                runs_file,
-                run_key
-            )
-            futures_map[fut] = task_obj
-        for fut in tqdm(futures_map, total=len(futures_map), desc="Judging creative pieces"):
-            _ = fut.result()
 
-    # 3) Compute final results
+    # 2) Judge (if needed)
+    tasks_needing_judging = []
+    # Reload run_data to get latest status after generation step
+    run_data = load_json_file(runs_file).get(run_key, {})
+    existing_tasks = run_data.get("creative_tasks", {})
+
+    for task_obj in tasks_to_run:
+        i_str = str(task_obj.iteration_index)
+        prompt_id = task_obj.prompt_id
+        iteration_dict = existing_tasks.get(i_str, {})
+        c_data = iteration_dict.get(str(prompt_id), {})
+        status = c_data.get("status", None)
+
+        # Judge if status is 'generated' OR if redo_judging is True and status is 'completed' or 'judged'
+        needs_judging = (status == "generated")
+        if redo_judging and status in ["completed", "judged"]:
+             needs_judging = True # Force re-judging
+
+        if needs_judging:
+            # Ensure the task object has the latest data before judging
+            task_obj = CreativeWritingTask.from_dict(c_data)
+            tasks_needing_judging.append(task_obj)
+
+    if tasks_needing_judging:
+        logging.info(f"Found {len(tasks_needing_judging)} tasks requiring judging.")
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures_map = {}
+            for task_obj in tasks_needing_judging:
+                fut = executor.submit(
+                    task_obj.judge,
+                    api_clients,
+                    judge_prompt_template,
+                    creative_writing_criteria,
+                    negative_criteria,
+                    runs_file,
+                    run_key
+                )
+                futures_map[fut] = task_obj
+            for fut in tqdm(list(futures_map.keys()), total=len(futures_map), desc="Judging creative pieces"):
+                 try:
+                    _ = fut.result() # Wait for completion, handle exceptions if needed
+                 except Exception as e:
+                    task = futures_map[fut]
+                    logging.error(f"Error judging task {task.prompt_id} (iter {task.iteration_index}): {e}", exc_info=True)
+
+    else:
+        logging.info("No tasks require judging.")
+
+
+    # 3) Compute final results (Rubric scores, Bootstrap)
     runs_after = load_json_file(runs_file)
     compute_benchmark_results_creative(runs_after, run_key, runs_file, negative_criteria)
 
 
-    # 4) Run ELO analysis, passing negative_criteria
-    run_elo_analysis_creative(
-        run_key=run_key,
-        elo_results_file="elo_results.json",
-        test_model=test_model,
-        judge_model=judge_model,
-        api_clients=api_clients,
-        writing_prompts=creative_prompts,
-        concurrency=num_threads,
-        pairwise_prompt_file="data/pairwise_prompt.txt",
-        negative_criteria=negative_criteria,
-        creative_bench_runs_file=runs_file
-    )
+    # 4) Run ELO analysis (conditionally)
+    # --- Check the run_elo flag ---
+    if run_elo:
+        logging.info("Starting ELO analysis...")
+        try:
+            run_elo_analysis_creative(
+                run_key=run_key,
+                elo_results_file="elo_results.json",
+                test_model=test_model,
+                judge_model=judge_model,
+                api_clients=api_clients,
+                writing_prompts=creative_prompts,
+                concurrency=num_threads,
+                pairwise_prompt_file="data/pairwise_prompt.txt",
+                negative_criteria=negative_criteria,
+                creative_bench_runs_file=runs_file
+            )
 
-    # fetch and report the normalized ELO score
-    elo_results = load_json_file("elo_results.json")
-    
-    # Extract the normalized ELO score if available
-    if test_model in elo_results:
-        raw_elo = elo_results[test_model].get("elo", "N/A")
-        norm_elo = elo_results[test_model].get("elo_norm", "N/A")
-        
-        # Add to run results
-        results_dict = runs.get(run_key, {}).get("results", {})
+            # fetch and report the normalized ELO score
+            elo_results = load_json_file("elo_results.json")
+            elo_raw = "N/A"
+            elo_norm = "N/A"
+
+            # Extract the normalized ELO score if available
+            if test_model in elo_results:
+                elo_raw = elo_results[test_model].get("elo", "N/A")
+                elo_norm = elo_results[test_model].get("elo_norm", "N/A")
+
+            # Add to run results
+            # Reload runs data to avoid overwriting other results potentially added
+            current_runs = load_json_file(runs_file)
+            results_dict = current_runs.get(run_key, {}).get("results", {})
+            bench_results = results_dict.get("benchmark_results", {})
+            bench_results["elo_raw"] = elo_raw
+            bench_results["elo_normalized"] = elo_norm
+
+            # Update the run data
+            update_run_data(runs_file, run_key, {"results": {"benchmark_results": bench_results}})
+
+            # Log the ELO scores
+            logging.info(f"ELO scores for {test_model}: Raw: {elo_raw}, Normalized: {elo_norm}")
+            # Print statement moved to main summary box
+
+        except Exception as e:
+            logging.error(f"ELO analysis failed: {e}", exc_info=True)
+            # Optionally update run data to indicate ELO failure
+            current_runs = load_json_file(runs_file)
+            results_dict = current_runs.get(run_key, {}).get("results", {})
+            bench_results = results_dict.get("benchmark_results", {})
+            bench_results["elo_raw"] = "Error"
+            bench_results["elo_normalized"] = "Error"
+            update_run_data(runs_file, run_key, {"results": {"benchmark_results": bench_results}})
+
+    else:
+        logging.info("Skipping ELO analysis as per --no-elo flag.")
+        # Ensure ELO fields are marked as skipped if they don't exist
+        current_runs = load_json_file(runs_file)
+        results_dict = current_runs.get(run_key, {}).get("results", {})
         bench_results = results_dict.get("benchmark_results", {})
-        bench_results["elo_raw"] = raw_elo
-        bench_results["elo_normalized"] = norm_elo
-        
-        # Update the run data
+        if "elo_raw" not in bench_results:
+             bench_results["elo_raw"] = "Skipped"
+        if "elo_normalized" not in bench_results:
+             bench_results["elo_normalized"] = "Skipped"
         update_run_data(runs_file, run_key, {"results": {"benchmark_results": bench_results}})
-        
-        # Log the ELO scores
-        logging.info(f"ELO scores for {test_model}: Raw: {raw_elo}, Normalized: {norm_elo}")
-        print(f"\nELO scores for {test_model}:")
-        print(f"  Raw: {raw_elo}")
-        print(f"  Normalized (with deepseek-r1=1500, llama-3.2-1b-instruct=200): {norm_elo}")
 
 
-    # Mark status=completed
+    # Mark status=completed and record end time
     update_run_data(
         runs_file,
         run_key,

@@ -207,7 +207,7 @@ def do_pairwise_judge(
     response = ""
     try:        
         response = api_clients["judge"].generate(
-            judge_model, final_prompt, temperature=0.0, max_tokens=16000
+            judge_model, final_prompt, temperature=0.0, max_tokens=16000, include_seed=True, min_p=None
         )        
         start = response.find("{")
         end = response.rfind("}")

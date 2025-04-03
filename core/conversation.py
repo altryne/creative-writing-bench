@@ -156,7 +156,7 @@ class CreativeWritingTask:
             )
 
             try:
-                judge_resp = judge_api.generate(self.judge_model, final_judge_prompt, temperature=0.0, max_tokens=1000)
+                judge_resp = judge_api.generate(self.judge_model, final_judge_prompt, temperature=0.0, max_tokens=1000, include_see=True, min_p=None)
                 scores_dict = parse_judge_scores_creative(judge_resp)
                 data_block["judge_scores"] = scores_dict
                 data_block["raw_judge_text"] = judge_resp
