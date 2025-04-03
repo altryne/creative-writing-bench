@@ -231,7 +231,7 @@ def normalize_elo_scores(raw_scores, anchor_models=None):
     Args:
         raw_scores (dict): Dictionary of model names to raw ELO scores
         anchor_models (dict, optional): Dictionary mapping model names to their anchor values.
-            Default: {'deepseek/deepseek-r1': 1500, 'mistralai/ministral-3b': 200}
+            Default: {'deepseek/deepseek-r1': 1500, 'llama-3.2-1b-instruct': 200}
             
     Returns:
         dict: Dictionary of model names to normalized ELO scores

@@ -81,6 +81,9 @@ class APIClient:
                 if '<think>' in content and "</think>" in content:
                     post_think = content.find('</think>') + len("</think>")
                     content = content[post_think:]
+                if '<reasoning>' in content and "</reasoning>" in content:
+                    post_think = content.find('</reasoning>') + len("</reasoning>")
+                    content = content[post_think:]
                 return content
             except requests.exceptions.Timeout:
                 logging.warning(f"Request timed out on attempt {attempt+1}/{self.max_retries}")

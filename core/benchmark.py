@@ -345,7 +345,7 @@ def run_eq_bench_creative(
         logging.info(f"ELO scores for {test_model}: Raw: {raw_elo}, Normalized: {norm_elo}")
         print(f"\nELO scores for {test_model}:")
         print(f"  Raw: {raw_elo}")
-        print(f"  Normalized (with deepseek-r1=1500, ministral-3b=200): {norm_elo}")
+        print(f"  Normalized (with deepseek-r1=1500, llama-3.2-1b-instruct=200): {norm_elo}")
 
 
     # Mark status=completed
