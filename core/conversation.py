@@ -104,7 +104,7 @@ class CreativeWritingTask:
                     }
                 })
 
-        self.status = "completed"
+        self.status = "generated"
         self.end_time = time.time()
         if runs_file and run_key:
             conv_data = self.to_dict()
@@ -122,8 +122,8 @@ class CreativeWritingTask:
         For each seed modifier, if there's a model_response and no generation failures,
         pass it to the judge model for scoring.
         """
-        if self.status != "completed":
-            logging.warning(f"Cannot judge a not-completed CreativeWritingTask (prompt_id={self.prompt_id})")
+        if self.status != "generated":
+            logging.warning(f"Cannot judge a {self.status} CreativeWritingTask (prompt_id={self.prompt_id})")
             return
 
         judge_api = api_clients["judge"]
@@ -156,7 +156,7 @@ class CreativeWritingTask:
             )
 
             try:
-                judge_resp = judge_api.generate(self.judge_model, final_judge_prompt, temperature=0.0, max_tokens=1000, include_see=True, min_p=None)
+                judge_resp = judge_api.generate(self.judge_model, final_judge_prompt, temperature=0.0, max_tokens=1000, include_seed=True, min_p=None)
                 scores_dict = parse_judge_scores_creative(judge_resp)
                 data_block["judge_scores"] = scores_dict
                 data_block["raw_judge_text"] = judge_resp
@@ -165,6 +165,7 @@ class CreativeWritingTask:
                 data_block["judge_scores"] = {}
                 data_block["raw_judge_text"] = f"[ERROR: {str(e)}]"
 
+            self.status = "completed"
             if runs_file and run_key:
                 update_run_data(runs_file, run_key, {
                     "creative_tasks": {

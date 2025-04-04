@@ -46,17 +46,21 @@ class APIClient:
         """
         messages = [{"role": "user", "content": prompt}]
 
-        # Optionally add random seed block as a system message. This allows us to get variation between iterations without using temp > 0 which compromises judging performance.
-        if include_seed:
-            seed_lines = [
-                ''.join(random.choices(string.ascii_letters + string.digits, k=80)) for _ in range(5)
-            ]
-            random_seed_block = (
-                "<RANDOM SEED PLEASE IGNORE>\n" +
-                "\n".join(seed_lines) +
-                "\n</RANDOM SEED>"
-            )
-            messages = [{"role": "system", "content": random_seed_block}] + messages
+        # Optionally add random seed block as a system message for judging tasks.
+        # This allows us to get variation between iterations without using temp > 0 which compromises judging performance.
+        # The reason for doing this is to understand *judging* variance from the same inputs, i.e. when
+        # using --redo-judging. In most use cases you won't need to worry about this and can leave it disabled.
+        if False:
+            if include_seed:
+                seed_lines = [
+                    ''.join(random.choices(string.ascii_letters + string.digits, k=80)) for _ in range(5)
+                ]
+                random_seed_block = (
+                    "<RANDOM SEED PLEASE IGNORE>\n" +
+                    "\n".join(seed_lines) +
+                    "\n</RANDOM SEED>"
+                )
+                messages = [{"role": "system", "content": random_seed_block}] + messages
 
         for attempt in range(self.max_retries):
             response = {}
@@ -65,9 +69,14 @@ class APIClient:
                     "model": model,
                     "messages": messages,
                     "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "min_p": min_p
+                    "max_tokens": max_tokens                    
                 }
+                if min_p != None:
+                    # Only use min_p for the test model (not judge).
+                    # If your test model doesn't support min_p, you may need to
+                    # disable this here. Alternatively you could use openrouter
+                    # which will automatically omit unsupported params.
+                    payload['min_p'] = min_p
                 response = requests.post(
                     self.base_url,
                     headers=self.headers,
