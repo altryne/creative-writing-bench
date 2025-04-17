@@ -918,30 +918,39 @@ def run_elo_analysis_creative(
     for m_name, iteration_map in temp_data.items():
         best_iter = None
         best_val = float("-inf")
+        # Calculate the true aggregate score across all iterations
+        total_score = 0
+        total_count = 0
+        
         for it_id, it_data in iteration_map.items():
             acc = it_data["scores_accum"]
             ccount = it_data["scores_count"]
             it_avg = acc/ccount if ccount>0 else 0.0
             it_data["creative_writing_rubric_score_iter"] = round(it_avg,2)
+            total_score += acc
+            total_count += ccount
             if it_avg>best_val:
                 best_val = it_avg
                 best_iter = it_id
-
+        
+        # Calculate the true aggregate score
+        agg_score = round(total_score/total_count if total_count>0 else 0.0, 2)
+        
         if m_name not in existing_analyses:
-            interpolated_elo = interpolate_elo_from_rubric_scores(m_name, best_val, existing_analyses)
+            interpolated_elo = interpolate_elo_from_rubric_scores(m_name, agg_score, existing_analyses)
             print('! interpolated elo', interpolated_elo)
             existing_analyses[m_name] = {
-                "creative_writing_rubric_score_agg": round(best_val, 2),
+                "creative_writing_rubric_score_agg": agg_score,
                 "elo": round(interpolated_elo, 2),
                 "iterations": {},
                 "best_iteration": str(best_iter)
             }
         else:
-            existing_analyses[m_name]["creative_writing_rubric_score_agg"] = round(best_val, 2)
+            existing_analyses[m_name]["creative_writing_rubric_score_agg"] = agg_score
             
             # Only set ELO if it doesn't exist
             if "elo" not in existing_analyses[m_name]:
-                interpolated_elo = interpolate_elo_from_rubric_scores(m_name, best_val, existing_analyses)
+                interpolated_elo = interpolate_elo_from_rubric_scores(m_name, agg_score, existing_analyses)
                 print('! interpolated elo', interpolated_elo)
                 existing_analyses[m_name]["elo"] = round(interpolated_elo, 2)
             

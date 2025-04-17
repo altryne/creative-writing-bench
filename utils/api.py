@@ -71,12 +71,17 @@ class APIClient:
                     "temperature": temperature,
                     "max_tokens": max_tokens                    
                 }
-                if min_p != None:
+                if min_p != None and model != 'o3':
                     # Only use min_p for the test model (not judge).
                     # If your test model doesn't support min_p, you may need to
                     # disable this here. Alternatively you could use openrouter
                     # which will automatically omit unsupported params.
                     payload['min_p'] = min_p
+                if model == 'o3':
+                    # o3 has special reqs via the openai api
+                    del payload['max_tokens']
+                    payload['max_completion_tokens'] = max_tokens
+                    payload['temperature'] = 1
                 response = requests.post(
                     self.base_url,
                     headers=self.headers,

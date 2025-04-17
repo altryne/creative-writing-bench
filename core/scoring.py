@@ -6,40 +6,6 @@ import numpy as np
 from typing import Dict, Any, List
 
 
-def _DELETEME_parse_judge_scores_creative(judge_response: str) -> Dict[str, float]:
-    """
-    Parse lines like:
-    [Scores]
-    Adherence to Instructions: 15
-    Imagery and Descriptive Quality: 18
-    ...
-    ---
-    Return a dict { "Adherence to Instructions": 15.0, ... }
-    """
-    lines = judge_response.splitlines()
-    scores_dict = {}
-    collecting = False
-    for line in lines:
-        line = line.strip()
-        if line.startswith("[Scores]"):
-            collecting = True
-            continue
-        if "---" in line:
-            collecting = False
-        if not collecting:
-            continue
-        if ":" in line:
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                metric_name = parts[0].strip()
-                val_str = parts[1].strip()
-                try:
-                    val = float(val_str)
-                    scores_dict[metric_name] = val
-                except ValueError:
-                    pass
-    return scores_dict
-
 SCORE_RANGE_MIN = 0
 SCORE_RANGE_MAX = 20
 def parse_judge_scores_creative(judge_model_response: str) -> Dict[str, float]:
@@ -60,12 +26,10 @@ def parse_judge_scores_creative(judge_model_response: str) -> Dict[str, float]:
         for match in matches:
             metric_name = match[0].strip()
             score = float(match[1])
-            #normalized_score = (score - SCORE_RANGE_MIN) / (SCORE_RANGE_MAX - SCORE_RANGE_MIN) * 10
-            normalized_score = score
-            scores[metric_name] = normalized_score
-
-    #print(judge_model_response)
-    #print(scores)
+            # Add check to ensure score <= 20
+            if score <= SCORE_RANGE_MAX:
+                scores[metric_name] = score
+            # If score > 20, it's discarded/ignored
 
     return scores
 
@@ -99,7 +63,8 @@ def compute_creative_scores(tasks: List[Dict[str, Any]], negative_criteria: List
             for metric, val in j_scores.items():
                 if isinstance(val, (int, float)):
                     new_val = invert_if_negative(metric, val, negative_criteria)
-                    local_vals.append(new_val)
+                    if new_val <= SCORE_RANGE_MAX:
+                        local_vals.append(new_val)
             if local_vals:
                 piece_score = sum(local_vals) / len(local_vals)  # average 0..20
                 piece_scores.append(piece_score)
