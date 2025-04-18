@@ -1,6 +1,7 @@
 import time
 import logging
 from typing import Dict, Any, List, Optional
+import weave
 
 class CreativeWritingTask:
     """
@@ -34,6 +35,7 @@ class CreativeWritingTask:
         # { seed_mod: { "model_response": "...", "judge_scores": { ... }, "raw_judge_text": "..." } }
         self.results_by_modifier = {}
 
+    @weave.op()
     def generate_creative_piece(self, api_clients, runs_file=None, run_key=None, save_interval=2):
         """
         For each seed modifier, if not already done, call the test model with base_prompt + seed.
@@ -116,6 +118,7 @@ class CreativeWritingTask:
                 }
             })
 
+    @weave.op()
     def judge(self, api_clients, judge_prompt: str, creative_writing_criteria: List[str],
           negative_criteria: List[str], runs_file=None, run_key=None):
         """

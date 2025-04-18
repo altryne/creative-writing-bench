@@ -1,0 +1,14 @@
+{
+  "0": {
+    "writing_prompt": "Write a short story about a robot that learns to paint.",
+    "seed_modifiers": ["sunset colors"]
+  },
+  "1": {
+    "writing_prompt": "Describe a world where dreams can be recorded and replayed.",
+    "seed_modifiers": ["first dream"]
+  },
+  "2": {
+    "writing_prompt": "Write a dialogue between a time traveler and their younger self.",
+    "seed_modifiers": ["at the old playground"]
+  }
+}

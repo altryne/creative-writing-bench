@@ -7,6 +7,7 @@ import random
 import string
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+import weave
 
 load_dotenv()
 
@@ -40,6 +41,7 @@ class APIClient:
 
         logging.debug(f"Initialized {self.model_type} API client with URL: {self.base_url}")
 
+    @weave.op()
     def generate(self, model: str, prompt: str, temperature: float = 0.0, max_tokens: int = 8096, include_seed=True, min_p = 0.1) -> str:
         """
         Generic chat-completion style call.  We allow an optional random seed block.

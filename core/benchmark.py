@@ -437,24 +437,54 @@ def run_eq_bench_creative(
 
     # --- Per-prompt Weave logging ---
     if weave_logger is not None:
+        print("\nStarting Weave per-prompt logging...")
         # Reload run data to get latest results
         run_data = load_json_file(runs_file).get(run_key, {})
         ctasks = run_data.get("creative_tasks", {})
+        print(f"\nCreative tasks found: {len(ctasks)}")
+        def sanitize_score_name(name):
+            # Replace spaces and dashes with underscores, remove invalid chars, ensure starts with letter/underscore
+            name = re.sub(r'[^0-9a-zA-Z_]', '_', name)
+            if not re.match(r'^[A-Za-z_]', name):
+                name = '_' + name
+            return name
         for i_str, p_dict in ctasks.items():
             for prompt_id, t_info in p_dict.items():
                 prompt = t_info.get("base_prompt", "")
-                model_output = t_info.get("model_output", "")
-                scores = t_info.get("results_by_modifier", {}).get("0", {}).get("judge_scores", {})
-                if prompt and model_output and scores:
-                    pred = weave_logger.log_prediction(
-                        inputs={"prompt": prompt},
-                        output=model_output
-                    )
-                    if "creative_score_0_20" in scores:
-                        pred.log_score("rubric_0_20", scores["creative_score_0_20"])
-                    if "eqbench_creative_score" in scores:
-                        pred.log_score("eqbench_creative", scores["eqbench_creative_score"])
-                    pred.finish()
+                seed_modifiers = t_info.get("seed_modifiers", [])
+                iteration_index = t_info.get("iteration_index", None)
+                test_model = t_info.get("test_model", "")
+                judge_model = t_info.get("judge_model", "")
+                results_by_modifier = t_info.get("results_by_modifier", {})
+                for seed_mod, result in results_by_modifier.items():
+                    model_output = result.get("model_response", "")
+                    scores = result.get("judge_scores", {})
+                    generation_failed = result.get("generation_failed", False)
+                    error_message = result.get("error_message", None)
+                    raw_judge_text = result.get("raw_judge_text", None)
+                    if model_output and scores:
+                        print(f"\nLogging Weave prediction for seed modifier: {seed_mod}")
+                        pred = weave_logger.log_prediction(
+                            inputs={
+                                "prompt": prompt,
+                                "seed_modifier": seed_mod,
+                                "iteration_index": iteration_index,
+                                "test_model": test_model,
+                                "judge_model": judge_model,
+                                "generation_failed": generation_failed,
+                                "error_message": error_message,
+                                "raw_judge_text": raw_judge_text
+                            },
+                            output=model_output
+                        )
+                        # Log all available scores, sanitized
+                        for score_name, score_value in scores.items():
+                            # If the value is a float but is an integer value, cast to int
+                            if isinstance(score_value, float) and score_value.is_integer():
+                                score_value = int(score_value)
+                            safe_name = sanitize_score_name(score_name)
+                            pred.log_score(safe_name, score_value)
+                        pred.finish()
 
     # --- Fetch summary values for return ---
     # Reload to get the latest benchmark_results
