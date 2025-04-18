@@ -84,6 +84,18 @@ python3 creative_writing_bench.py \
 *   `--threads`: Number of parallel threads for generation and judging (adjust based on your API rate limits and system). High numbers like 500 assume generous rate limits.
 *   `--verbosity`: Logging level (e.g., `DEBUG`, `INFO`).
 
+### Logging to Weave (optional)
+
+Stream every prediction and score into an observability dashboard:
+
+    python creative_writing_bench.py \
+      --test-model gpt-4o-mini \
+      --judge-model gpt-4 \
+      --weave-project my-creative-runs \
+      --threads 1    # Weave logger is single-threaded for now
+
+If you omit --weave-project, no data is sent to Weave.
+
 ### Understanding the Output
 
 *   Progress will be logged to the console.
@@ -142,4 +154,3 @@ If you use this benchmark in your work, please cite the repository:
   journal = {GitHub repository},
   howpublished = {\url{https://github.com/EQ-bench/creative-writing-bench}}
 }
-```

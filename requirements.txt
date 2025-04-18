@@ -24,6 +24,9 @@ nltk
 # For parallel processing (used in slop score calculation)
 joblib
 
+# For Weave logging
+weave
+
 # Note: After installing nltk, you need to download required data:
 # Run python and enter:
 # import nltk

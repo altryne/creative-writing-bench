@@ -112,10 +112,24 @@ def main():
     parser.add_argument("--judge-prompt-file", default="data/creative_writing_judging_prompt.txt")
     parser.add_argument("--save-interval", type=int, default=2, help="How often to save partial progress.")
     parser.add_argument("--iterations", type=int, default=1, help="How many iteration passes to run (one seed per iteration).")
-    # --- New Argument ---
     parser.add_argument("--no-elo", action="store_true", default=False, help="Disable the ELO analysis step.")
+    parser.add_argument(
+        "--weave-project",
+        help="Name of a Weave project that will receive all predictions and scores. "
+             "If omitted, Weave logging is disabled."
+    )
 
     args = parser.parse_args()
+    weave_logger = None
+    if args.weave_project:
+        import weave
+        from weave.flow.eval_imperative import ImperativeEvaluationLogger
+        weave.init(args.weave_project)
+        weave_logger = ImperativeEvaluationLogger(
+            model={"bench_model": args.test_model,
+                   "judge_model": args.judge_model},
+            dataset="eq-bench-creative"
+        )
     setup_logging(get_verbosity(args.verbosity))
 
     # Hook signals
@@ -124,7 +138,7 @@ def main():
 
     run_elo_flag = not args.no_elo # Determine if ELO should run
 
-    run_key = run_eq_bench_creative(
+    run_key, total_prompts, summary_eq, summary_rubric = run_eq_bench_creative(
         test_model=args.test_model,
         judge_model=args.judge_model,
         runs_file=args.runs_file,
@@ -137,7 +151,8 @@ def main():
         redo_judging=args.redo_judging,
         save_interval=args.save_interval,
         iterations=args.iterations,
-        run_elo=run_elo_flag # Pass the flag
+        run_elo=run_elo_flag,
+        weave_logger=weave_logger
     )
 
     logging.info(f"Creative writing benchmark completed. Run key: {run_key}")
@@ -145,6 +160,13 @@ def main():
 
     # --- Print Summary Box ---
     print_summary_box(run_key, args.runs_file, run_elo_flag)
+    if weave_logger is not None:
+        weave_logger.log_summary({
+            "run_key": run_key,
+            "total_prompts": total_prompts,
+            "eqbench_score": summary_eq,
+            "rubric_avg": summary_rubric
+        })
 
 
 if __name__ == "__main__":

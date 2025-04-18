@@ -184,11 +184,16 @@ def run_eq_bench_creative(
     redo_judging: bool = False,
     save_interval: int = 2,
     iterations: int = 1,
-    run_elo: bool = True
-) -> str:
+    run_elo: bool = True,
+    weave_logger=None
+) -> tuple:
     """
     Main function to run the creative writing benchmark.
     """
+    if weave_logger is not None and num_threads > 1:
+        raise RuntimeError(
+            "Weave logging is not thread-safe yet – run with --threads 1 or omit --weave-project."
+        )
     from utils.file_io import load_json_file, update_run_data
     from core.conversation import CreativeWritingTask
 
@@ -287,7 +292,6 @@ def run_eq_bench_creative(
         else:
             logging.info("No tasks found with 'completed' or 'judged' status to reset for --redo-judging.")
 
-
     # --- Figure out tasks: Create or load task objects into memory ---
     run_data = load_json_file(runs_file).get(run_key, {}) # Load potentially updated data
     existing_tasks = run_data.get("creative_tasks", {})
@@ -358,6 +362,7 @@ def run_eq_bench_creative(
     else:
         logging.info("No tasks require generation based on initial status.")
 
+    total_prompts = len(tasks_to_run)
 
     # --- 2) Judge (if needed) ---
     tasks_needing_judging = []
@@ -424,13 +429,40 @@ def run_eq_bench_creative(
     else:
         logging.info("No tasks require judging based on status and redo flag.")
 
-
     # --- 3) Compute final results (Rubric scores, Bootstrap) ---
     logging.info("Calculating final benchmark results...")
     # Load the absolute latest data from the file AFTER judging threads finished saving
     final_runs_data = load_json_file(runs_file)
     compute_benchmark_results_creative(final_runs_data, run_key, runs_file, negative_criteria)
 
+    # --- Per-prompt Weave logging ---
+    if weave_logger is not None:
+        # Reload run data to get latest results
+        run_data = load_json_file(runs_file).get(run_key, {})
+        ctasks = run_data.get("creative_tasks", {})
+        for i_str, p_dict in ctasks.items():
+            for prompt_id, t_info in p_dict.items():
+                prompt = t_info.get("base_prompt", "")
+                model_output = t_info.get("model_output", "")
+                scores = t_info.get("results_by_modifier", {}).get("0", {}).get("judge_scores", {})
+                if prompt and model_output and scores:
+                    pred = weave_logger.log_prediction(
+                        inputs={"prompt": prompt},
+                        output=model_output
+                    )
+                    if "creative_score_0_20" in scores:
+                        pred.log_score("rubric_0_20", scores["creative_score_0_20"])
+                    if "eqbench_creative_score" in scores:
+                        pred.log_score("eqbench_creative", scores["eqbench_creative_score"])
+                    pred.finish()
+
+    # --- Fetch summary values for return ---
+    # Reload to get the latest benchmark_results
+    run_data = load_json_file(runs_file).get(run_key, {})
+    results = run_data.get("results", {}).get("benchmark_results", {})
+    summary_eq = results.get("eqbench_creative_score", 0.0)
+    summary_rubric = results.get("creative_score_0_20", 0.0)
+    return run_key, total_prompts, summary_eq, summary_rubric
 
     # --- 4) Run ELO analysis (conditionally) ---
     if run_elo:
@@ -503,7 +535,6 @@ def run_eq_bench_creative(
         results_dict["benchmark_results"] = bench_results
         update_run_data(runs_file, run_key, {"results": results_dict})
 
-
     # --- Mark status=completed and record end time ---
     update_run_data(
         runs_file,
@@ -514,5 +545,3 @@ def run_eq_bench_creative(
         }
     )
     logging.info(f"Run {run_key} marked as completed.")
-
-    return run_key
